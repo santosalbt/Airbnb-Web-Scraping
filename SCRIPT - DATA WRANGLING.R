@@ -1,17 +1,21 @@
 library(dplyr)
-library(pastecs)
 
+# ---------------------- Carregando arquivo do web scraping
 load("completo.RData")
-
-# ---------------------- Tratando os missing values
-colSums(is.na(completo))
-#Vamos retirar todos as linhas que contém NA na avaliação... no caso essas mesmas linhas possuem NA nos comentarios
-completo <- na.omit(completo) 
-colSums(is.na(completo))
 
 # ---------------------- Retirando colunas que naõ nos ajudarão nos próximos passos
 completo$titulos_vector <- NULL
 completo$nomes_vector <- NULL
+
+# ---------------------- Tratando os missing values
+colSums(is.na(completo))
+#Corrigindo erro do codigo de webscraping...substituindo os "NA" da coluna comentários por 0
+completo[["comentario_vector"]][is.na(completo[["comentario_vector"]])] <- 0
+colSums(is.na(completo))
+
+#Vamos retirar todos as linhas que contém NA na avaliação... listwise deletion
+completo <- na.omit(completo) 
+colSums(is.na(completo))
 
 # ---------------------- Tratando o número de hospedes
 aggregate(data.frame(count = completo$hospedes_vector), list(value = completo$hospedes_vector), length)
@@ -23,18 +27,17 @@ aggregate(data.frame(count = completo$banheiros_vector), list(value = completo$b
 
 # ---------------------- Tratando o número de quartos
 aggregate(data.frame(count = completo$quartos_vector), list(value = completo$quartos_vector), length)
-#Tratando exceções 
-completo$quartos_vector[completo$quartos_vector=="2 camas"] <- "1 quarto"
+#Há uma coluna com dados de cama na coluna de quartos... vamos apagar essa linha para evitar erros
+completo<-completo[!(completo$quartos_vector=="2 camas"),]
+aggregate(data.frame(count = completo$quartos_vector), list(value = completo$quartos_vector), length)
+
+#Tratando exceções... vamos considerar estudio como um quarto neste trabalho
 completo$quartos_vector[completo$quartos_vector=="Estúdio"] <- "1 quarto"
 aggregate(data.frame(count = completo$quartos_vector), list(value = completo$quartos_vector), length)
 
 # ---------------------- Tratando o número de camas
 aggregate(data.frame(count = completo$camas_vector), list(value = completo$camas_vector), length)
-#Tratando exceções 
-completo$camas_vector[completo$camas_vector=="1 banheiro"] <- "2 camas"
-completo$camas_vector[completo$camas_vector=="1 banheiro privado"] <- "1 cama"
-aggregate(data.frame(count = completo$camas_vector), list(value = completo$camas_vector), length)
-
+#Nada a fazer por aqui
 
 # ---------------------- Tratando os tipos de acomodação
 aggregate(data.frame(count = completo$tipo_vector), list(value = completo$tipo_vector), length)
@@ -50,6 +53,7 @@ aggregate(data.frame(count = completo$tipo_vector), list(value = completo$tipo_v
 #Tratando exceções 
 completo$tipo_vector[completo$tipo_vector=="Casa na árvore "] <- "Espaço inteiro"
 completo$tipo_vector[completo$tipo_vector=="Casa na terra "] <- "Espaço inteiro"
+completo$tipo_vector[completo$tipo_vector=="Casebre "] <- "Espaço inteiro"
 completo$tipo_vector[completo$tipo_vector=="Microcasa "] <- "Espaço inteiro"
 completo$tipo_vector[completo$tipo_vector=="O lugar inteiro "] <- "Espaço inteiro"
 completo$tipo_vector[completo$tipo_vector=="Quarto "] <- "Quarto inteiro "
@@ -71,76 +75,117 @@ completo$banheiros_vector <- as.numeric(as.character(completo$banheiros_vector))
 completo$quartos_vector <- as.numeric(as.character(completo$quartos_vector))
 completo$camas_vector <- as.numeric(as.character(completo$camas_vector))
 str(completo)
-#Estatistica basica
-stat.desc(completo$preco_vector) 
 
-# Scatter plot with the 2d density estimation
-sp <- ggplot(completo, aes(x=long_vector, y=lat_vector)) +
-  geom_point()
-sp + geom_density_2d()
+# ---------------------- Renomeando colunas
+str(completo)
+colnames(completo) <- c("superhost","precos", "links", "avaliacoes", "hospedes", "banheiros","quartos","camas","latitude","longitude","comentarios","tipo","id")
+str(completo)
+df <- completo
 
-sp + geom_density_2d_filled(alpha = 0.5) +
-  geom_density_2d(size = 0.25, colour = "black")
-# ---------------------- Histograma dos preços
-
-ggplot(completo) +
-  aes(x=preco_vector) +
-  geom_histogram(fill="darkblue",
-                 col="black",
-                 alpha=0.5,
-                 bins=20,
-                 aes(y=..density..))+
-  stat_function(fun = dnorm, args = list(mean = mean(completo$preco_vector), sd=sd(completo$preco_vector)))+
-  labs(title = "Histograma de Preços")
-
-# ---------------------- Boxplot do tipo de acomodação e preço
-completo %>%
-  ggplot(aes(reorder(tipo_vector,preco_vector),preco_vector))+
-  geom_jitter(width=0.2)+
-  geom_boxplot(fill="darkblue",
-               alpha=0.5)
-
-# ---------------------- Scatter das avaliacoes em relacao ao preço
-ggplot(completo, aes(x=avaliacao_vector, y=preco_vector)) + 
-  geom_point()
-
-# ---------------------- Scatter dos comentarios em relacao ao preço
-ggplot(completo, aes(x=comentario_vector, y=preco_vector)) + 
-  geom_point()
-
-ggplot(completo, aes(x=log(1+comentario_vector),  y=preco_vector)) + 
-  geom_point()
+# ---------------------- Selecionando apenas linhas que estejam localizadas em bairros
+load('df.RData')
+df <- df[df$precos < 1800, ]
+# Criando um objeto do tipo sf a partir de um data frame:
+sf_df <- st_as_sf(x = df, 
+                  coords = c("longitude", "latitude"), 
+                  crs = 4326)
 
 
-# ---------------------- Boxplot do numero de quartos em relacao ao preço
-completo %>%
-  ggplot(aes(quartos_vector,preco_vector,group=quartos_vector))+
-  geom_jitter(width=0.2)+
-  geom_boxplot(fill="darkblue",
-               alpha=0.5)
+# Carregando um shapefile dos bairros de Campos do Jordão
+shp_bairros <- readOGR("SP_campos_do_jordao_bairros_2022", "BAIRROS")
+class(shp_bairros)
+#Visualiazação tabular
+class(shp_bairros)
+shp_bairros@data %>%
+  kable() %>%
+  kable_styling(bootstrap_options = "striped", 
+                full_width = TRUE, 
+                font_size = 12)
 
-# ---------------------- Boxplot do numero de banheiros em relacao ao preço
-completo %>%
-  ggplot(aes(banheiros_vector,preco_vector,group=banheiros_vector))+
-  geom_jitter(width=0.2)+
-  geom_boxplot(fill="darkblue",
-               alpha=0.5)
+# Visualização gráfica do objeto shp_bairros:
+tm_shape(shp = shp_bairros) + 
+  tm_borders()
 
-# ---------------------- Boxplot do numero de cama em relacao ao preço
-completo %>%
-  ggplot(aes(camas_vector,preco_vector,group=camas_vector))+
-  geom_jitter(width=0.2)+
-  geom_boxplot(fill="darkblue",
-               alpha=0.5)
+# Combinando o objeto shp_bairros com o objeto sf_df:
+tmap_mode("view")
+tm_shape(shp = shp_bairros) + 
+  tm_borders(alpha = 0.5) +
+  tm_shape(shp = sf_df) + 
+  tm_dots(col = "red", 
+          border.col = "black", 
+          size = 0.04, 
+          alpha = 0.8)
+# Pegando apenas observações que possuam um bairro atrelado
+polygonSF_bairros <- read_sf(dsn = 'SP_campos_do_jordao_bairros_2022')
+class(polygonSF_bairros)
+df_bairros <- st_intersection(sf_df, polygonSF_bairros)
+df_bairros
+# Plotando sf e shp considerando novamente
+sf_df_bairros <- st_as_sf(x = df_bairros, 
+                  coords = c("longitude", "latitude"), 
+                  crs = 4326)
 
-# ---------------------- Boxplot do numero de hospedes em relacao ao preço
-completo %>%
-  ggplot(aes(hospedes_vector,preco_vector,group=hospedes_vector))+
-  geom_jitter(width=0.2)+
-  geom_boxplot(fill="darkblue",
-               alpha=0.5)
+tm_shape(shp = shp_bairros) + 
+  tm_borders(alpha = 0.5) +
+  tm_shape(shp = sf_df_bairros) + 
+  tm_dots(col = "red", 
+          border.col = "black", 
+          size = 0.04, 
+          alpha = 0.8)
 
-# ---------------------- LET'S GOOOOO
+df_bairros$longitude <- st_coordinates(df_bairros)[,1]
+df_bairros$latitude <- st_coordinates(df_bairros)[,2]
 
-completo$comentario_log_vector <- log(1+completo$comentario_vector)
-completo$quartos_por_hospedes_vector <- completo$quartos_vector/completo$hospedes_vector
+
+# ---------------------- Plotando em relação aos preços
+
+df_teste <- aggregate(df_bairros[,2], list(df_bairros$bairro), mean)
+colnames(df_teste)[1] = "Name"
+colnames(df_teste)[2] = "preco"
+df_teste['count'] <- aggregate(df_bairros$bairro, by = list(df_bairros$bairro), FUN = length)[2]
+
+#df_teste <- df_teste[ ,c('Name', 'count')]
+#df_teste <- df_teste[ ,c('Name', 'preco')]
+
+
+teste <- sp::merge(shp_bairros, df_teste, by = "Name")
+tm_shape(teste) +
+  tm_polygons("preco", 
+              title = "Preços", contrast = 0.7, 
+              breaks = c(200, 400, 600, 800, 1000, 1200 ),
+              labels = c("R$200 - R$400", "R$400 - R$600", "R$600 - R$800", "R$800 - R$1000", "R$1000 - R$1200"),
+              border.col = "gray30", id = "name") 
+
+tm_shape(teste) +
+  tm_polygons("count", 
+              title = "Número de acomodações", contrast = 0.7, 
+              breaks = c(1, 5, 10, 15, 20, 25,30,35 ),
+              labels = c("1-5", "6-10", "11-15", "16-20", "21-25","26-30","31-35"),
+              border.col = "gray30", id = "name") +
+  
+
+
+
+# Renomeando coluna dos bairros
+names(df_bairros)[names(df_bairros) == "Name"] <- "bairro"
+df_bairros[ ,c('descriptio', 'timestamp','begin','end','altitudeMo','tessellate','extrude','visibility','drawOrder','icon')] <- list(NULL)
+length(df_bairros)
+
+
+#df_bairros <- dummy_cols(df_bairros, 
+#                            select_columns = "bairro")
+#df_bairros[ ,c('geometry','bairro')] <- list(NULL)
+#save(df_bairros, file = "df_bairros.RData")
+class(df_bairros)
+df_bairros <- df_bairros %>% st_drop_geometry()
+class(df_bairros)
+df_bairros[ ,c('id','links')] <- list(NULL)
+df_bairros <- df_bairros[df_bairros$precos < 1800, ]
+save(df_bairros, file = "df_bairros.RData")
+
+df_bairros_correlacao <- df_bairros
+
+
+
+# ---------------------- Salvando em um novo arquivo
+#save(df, file = "df.RData")
